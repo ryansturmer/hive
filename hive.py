@@ -268,8 +268,12 @@ class HivePanel(wx.Panel):
         h,s,r,a,b = hex_dims(hex_size)
         x,y = loc
         dc.SetPen(wx.Pen(wx.Colour(128,128,128), line_thickness))
-        dc.SetBrush(wx.Brush(wx.Colour(0xff,0xff,0xff,128)))
-        dc.DrawRectangle(x-r-(a*TILEBOX_SPACING), (y-(b/2)) - b*TILEBOX_SPACING, a + 2*a*TILEBOX_SPACING, b*len(TILES) + b*(len(TILES)+1)*TILEBOX_SPACING)
+        rx,ry = x-r-(a*TILEBOX_SPACING), (y-(b/2)) - b*TILEBOX_SPACING
+        rw,rh = a + 2*a*TILEBOX_SPACING, b*len(TILES) + b*(len(TILES)+1)*TILEBOX_SPACING
+        dc.SetBrush(wx.Brush(wx.Colour(128,128,128)))
+        dc.DrawRectangle(rx+2,ry+2,rw,rh)
+        dc.SetBrush(wx.Brush(wx.Colour(0xff,0xff,0xff)))
+        dc.DrawRectangle(rx,ry,rw,rh)
         self.tilebox_centers = {}
         self.tilebox_size = hex_size
         for tile_type in TILES:
