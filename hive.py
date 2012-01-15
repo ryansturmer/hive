@@ -42,6 +42,7 @@ class Tile(object):
         self.color = TILE_COLORS.get(type, (186,189,182))
         self.player = player
 
+
 class HiveGame(object):
     def __init__(self):
         self.tiles = {}
@@ -89,7 +90,13 @@ class HiveGame(object):
             tilebox[TILE_SPIDER] = 2
             self.player_tiles[player] = tilebox
 
-    
+    def move_tile(self, src, dest):
+        tile = self.tiles[src].pop()
+        if not self.tiles[src]:
+            del self.tiles[src]
+        if dest not in self.tiles: self.tiles[dest] = []
+        self.tiles[dest].append(tile)
+
     def add_tile(self, loc, tile):
         if isinstance(tile, int):
             tile = Tile(self.player, tile)
@@ -123,6 +130,19 @@ class HiveGame(object):
                 all_legal_spots.add(n)
         return all_legal_spots
 
+    def check_hive(self):
+        if len(self.tiles) == 0:
+            return True
+        seed_tile = self.tiles.keys()[0]
+        def flood_fill(self, tile_memo, tile):
+            tile_memo.add(tile)
+            neighbors = filter(lambda n : n in self.tiles and n not in tile_memo, hex_neighbors(*tile))
+            for neighbor in neighbors:
+                flood_fill(self, tile_memo, neighbor)
+            return tile_memo
+        filled_area = flood_fill(self, set(), seed_tile)
+        return len(filled_area) == len(self.tiles)
+
     def get_legal_moves(self, loc):
         all_legal_spots = self.get_legal_locs()
         if loc not in self.tiles:
@@ -133,18 +153,23 @@ class HiveGame(object):
             # Moves one and only one space, along 
             neighbors = hex_neighbors(*loc)
             valid_neighbors = filter(lambda n : n in all_legal_spots and self.can_slide_to(loc, n), neighbors)
-            return valid_neighbors
         elif tile.type == TILE_BEETLE:
-            neighbors = hex_neighbors(x,y)
-            return neighbors
+            valid_neighbors = hex_neighbors(*loc)
         else:
-            return []
+            valid_neighbors = []
+        
+        retval = []
+        for neighbor in valid_neighbors:
+            self.move_tile(loc, neighbor)
+            if self.check_hive(): 
+                retval.append(neighbor)
+            self.move_tile(neighbor, loc)
+        return retval
         
     @property
     def visible_tiles(self):
-        keys = self.tiles.keys()
-        values = [self.tiles[key][-1] for key in keys]
-        return dict(zip(keys,values))
+        d = [(key, self.tiles[key][-1]) for key in self.tiles.keys() if self.tiles[key]]
+        return dict(d)
 
 def hex_dims(s):
     h = sin(THIRTY_DEG)*s
@@ -170,7 +195,9 @@ class HivePanel(wx.Panel):
         self.Bind(wx.EVT_PAINT, self.on_paint)
         self.Bind(wx.EVT_MOTION, self.on_motion)
         self.Bind(wx.EVT_LEFT_DOWN, self.on_down)
+        self.Bind(wx.EVT_RIGHT_DOWN, self.on_right_down)
         self.Bind(wx.EVT_LEFT_UP, self.on_up)
+        self.Bind(wx.EVT_RIGHT_UP, self.on_right_up)
         self.Bind(wx.EVT_MOUSEWHEEL, self.on_wheel)
         #self.Bind(wx.EVT_LEFT_CLICK, self.on_click)
         w,h = self.GetSize()
@@ -197,10 +224,15 @@ class HivePanel(wx.Panel):
             self.Refresh()
 
     def on_down(self, evt):
-        self.dragging = True
+    #    self.dragging = True
         x,y = evt.GetPosition()
         self.last_pos = (x,y)
 
+    def on_right_down(self, evt):
+        self.dragging = True
+        x,y = evt.GetPosition()
+        self.last_pos = (x,y)
+    
     def hit_test(self, x,y):
         'Now checks for a hit in an inscribed circle!  Close enough!'
         if self.tilebox_centers:
@@ -226,23 +258,29 @@ class HivePanel(wx.Panel):
                 return HIT_TYPE_EMPTY, (row, col)
         return HIT_TYPE_MISS, (-1,-1)
 
+    def on_right_up(self, evt):
+        self.dragging=False
+
     def on_up(self, evt):
-        self.dragging = False
         x,y = evt.GetPosition()
         type, hit = self.hit_test(x,y)
         if(type == HIT_TYPE_TILE):
             self.model.hilight_tile(hit)
-            self.place_candidates = []
+            self.place_candidates = self.model.get_legal_moves(hit)
             self.place_type = -1
             self.Refresh()
         elif(type == HIT_TYPE_TILEBOX):
             self.place_candidates = self.model.get_legal_place_locs()
             self.place_type = hit
         elif(type == HIT_TYPE_EMPTY):
-            self.model.place_new_tile(hit, self.place_type)
+            if self.model.hilighted_tile:
+                self.model.move_tile(self.model.hilighted_tile, hit)
+            else:
+                self.model.place_new_tile(hit, self.place_type)
             self.place_candidates = []
             self.place_type = -1
         else:
+            self.place_candidates = []
             self.model.hilight_tile(None) 
         self.Refresh()
     def draw_hex(self, dc, dims, x, y):
@@ -263,6 +301,10 @@ class HivePanel(wx.Panel):
         dc = wx.AutoBufferedPaintDC(self)
         self.draw(dc)
 
+    def draw_centered_text(self, dc, text, loc):
+        w,h = dc.GetTextExtent(text)
+        dc.DrawText(text, loc[0]-w/2, loc[1]-h/2)
+    
     def draw_tilebox(self, dc, hex_size, line_thickness, loc):
         TILEBOX_SPACING = 0.25
         h,s,r,a,b = hex_dims(hex_size)
@@ -284,7 +326,9 @@ class HivePanel(wx.Panel):
             y += b + b*TILEBOX_SPACING
 
     def draw_text(self, dc):
-        pass
+        w,h = dc.GetSize()
+        players = {PLAYER_1: "Player 1", PLAYER_2:"Player 2"}
+        self.draw_centered_text(dc, players[self.model.player], (w/2, 20))
 
     def draw(self, dc):
         w,h = dc.GetSize()
@@ -309,6 +353,7 @@ class HivePanel(wx.Panel):
             self.draw_hex(dc, (h,s,r,a,b), self.offset_x + col*a + r*(row%2), self.offset_y + row*(s+h))
         
         self.draw_tilebox(dc, 20, 1, (w-50, 50))
+        self.draw_text(dc)
 if __name__ == "__main__":
     app = wx.App(False)
     frame = wx.Frame(None)
