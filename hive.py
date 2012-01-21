@@ -264,14 +264,10 @@ class HivePanel(wx.Panel):
     def on_up(self, evt):
         x,y = evt.GetPosition()
         type, hit = self.hit_test(x,y)
-        if(type == HIT_TYPE_TILE):
-            self.model.hilight_tile(hit)
-            self.place_candidates = self.model.get_legal_moves(hit)
-            self.place_type = -1
-            self.Refresh()
-        elif(type == HIT_TYPE_TILEBOX):
+        if(type == HIT_TYPE_TILEBOX):
             self.place_candidates = self.model.get_legal_place_locs()
             self.place_type = hit
+            self.model.hilight_tile(None)
         elif(type == HIT_TYPE_EMPTY):
             if self.model.hilighted_tile:
                 self.model.move_tile(self.model.hilighted_tile, hit)
@@ -279,6 +275,14 @@ class HivePanel(wx.Panel):
                 self.model.place_new_tile(hit, self.place_type)
             self.place_candidates = []
             self.place_type = -1
+        elif(type == HIT_TYPE_TILE):
+            if self.model.tiles[hit][-1].player == self.model.player:
+                self.model.hilight_tile(hit)
+                self.place_candidates = self.model.get_legal_moves(hit)
+                self.place_type = -1
+            else:
+                self.place_candidates = []
+                self.model.hilight_tile(None)
         else:
             self.place_candidates = []
             self.model.hilight_tile(None) 
@@ -348,9 +352,18 @@ class HivePanel(wx.Panel):
             if (row,col) == self.model.hilighted_tile:
                 dc.SetBrush(wx.GREEN_BRUSH)
             else:
-                dc.SetBrush(wx.Brush(wx.Colour(*tile.color)))
-                #dc.SetBrush(wx.WHITE_BRUSH)
+                if tile.player == PLAYER_1:
+                    dc.SetPen(wx.Pen(wx.Colour(128,128,128), line_thickness))
+                    dc.SetBrush(wx.WHITE_BRUSH)
+                else:
+                    dc.SetPen(wx.Pen(wx.Colour(64,64,64), line_thickness))
+                    dc.SetBrush(wx.BLACK_BRUSH)
             self.draw_hex(dc, (h,s,r,a,b), self.offset_x + col*a + r*(row%2), self.offset_y + row*(s+h))
+            h2,s2,r2,a2,b2 = hex_dims(self.scale*TILE_SIZE*0.5)
+            dc.SetBrush(wx.Brush(wx.Colour(*tile.color)))
+            self.draw_hex(dc, (h2,s2,r2,a2,b2), self.offset_x + col*a + r*(row%2), self.offset_y + row*(s+h))
+
+            
         
         self.draw_tilebox(dc, 20, 1, (w-50, 50))
         self.draw_text(dc)
